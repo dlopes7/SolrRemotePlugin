@@ -42,6 +42,8 @@ public class SolrHelper {
 			HttpGet request = new HttpGet(uri);
 			HttpResponse response = httpClient.execute(request);
 			inputStream = response.getEntity().getContent();
+			
+			
 
 			
 			JsonNode jsonNode = getJsonNode(inputStream);
@@ -75,10 +77,10 @@ public class SolrHelper {
 			HttpGet request = new HttpGet(uri);
 			HttpResponse response = httpClient.execute(request);
 			inputStream = response.getEntity().getContent();
-			
 			JsonNode node = getJsonNode(inputStream);
 			if (node != null) {
 				Iterator<String> fieldNames = node.path("status").fieldNames();
+				
 				while (fieldNames.hasNext()) {
 					cores.add(fieldNames.next());
 				}
@@ -87,6 +89,8 @@ public class SolrHelper {
 				}
 			}
 		} catch (Exception e) {
+			System.out.println(e.getMessage());
+			e.printStackTrace();
 			throw new RuntimeException();
 		} finally {
 			try {

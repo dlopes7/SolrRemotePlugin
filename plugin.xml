@@ -12,7 +12,6 @@
     <configuration>
       <property key="port" label="Port" type="string" description="Porta do SOLR (default 8080)" default="8080" multiline="false" />
       <property key="handlers" label="Query Handlers" type="string" description="Lista de handlers (&quot;/select&quot;, &quot;/update&quot;) separados por ponto e vírgula" default="/select;/update" multiline="false" />
-      <property key="cores" label="Cores" type="string" description="Lista de cores separados por ponto e vírgula (&quot;Produto&quot;, &quot;Catalogo&quot;)" default="Produto" multiline="false" />
     </configuration>
   </extension>
   <extension point="com.dynatrace.diagnostics.pdk.monitor" id="com.david.solr.monitor" name="SOLR Remote Monitor">
@@ -22,16 +21,16 @@
     <metricgroup monitorid="com.david.solr.monitor">
       <metric defaultrate="purepath" name="Query Result Cache Hit Ratio" unit="number" description="My metric description ..." />
       <metric defaultrate="purepath" name="Query Result Cache Hit Ratio Cumulative" unit="number" description="My metric description ..." />
-      <metric defaultrate="purepath" name="Query Result Cache Size" unit="number" description="My metric description ..." />
+      <metric defaultrate="purepath" name="Query Result Cache Size" unit="bytes" description="My metric description ..." />
       <metric defaultrate="purepath" name="Document Cache Hit Ratio" unit="number" description="My metric description ..." />
       <metric defaultrate="purepath" name="Document Cache Hit Ratio Cumulative" unit="number" description="My metric description ..." />
-      <metric defaultrate="purepath" name="Document Cache Size" unit="number" description="My metric description ..." />
+      <metric defaultrate="purepath" name="Document Cache Size" unit="bytes" description="My metric description ..." />
       <metric defaultrate="purepath" name="Field Value Cache Hit Ratio" unit="number" description="My metric description ..." />
       <metric defaultrate="purepath" name="Field Value Cache Hit Ratio Cumulative" unit="number" description="My metric description ..." />
-      <metric defaultrate="purepath" name="Field Value Cache Size" unit="number" description="My metric description ..." />
+      <metric defaultrate="purepath" name="Field Value Cache Size" unit="bytes" description="My metric description ..." />
       <metric defaultrate="purepath" name="Filter Cache Hit Ratio" unit="number" description="My metric description ..." />
       <metric defaultrate="purepath" name="Filter Cache Hit Ratio Cumulative" unit="number" description="My metric description ..." />
-      <metric defaultrate="purepath" name="Filter Cache Size" unit="number" description="My metric description ..." />
+      <metric defaultrate="purepath" name="Filter Cache Size" unit="bytes" description="My metric description ..." />
     </metricgroup>
   </extension>
   <extension point="com.dynatrace.diagnostics.pdk.monitormetricgroup" id="com.david.solr.monitor.core" name="Core Stats">

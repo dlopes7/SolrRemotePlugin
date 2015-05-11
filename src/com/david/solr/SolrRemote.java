@@ -19,15 +19,22 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.base.Strings;
 import com.google.common.collect.Iterables;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStreamWriter;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
-
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.apache.http.HttpResponse;
@@ -39,125 +46,55 @@ import org.apache.http.impl.client.HttpClients;
 public class SolrRemote implements Monitor {
 	
 	private String context_root;
-	//private static final String CORE_URI = "/admin/cores?action=STATUS&wt=json";
+	private static final String CORE_URI = "/admin/cores?action=STATUS&wt=json";
 	private static String plugins_uri = "/%s/admin/plugins?wt=json";
 	private static String memory_uri = "/%s/admin/system?stats=true&wt=json";
 	private static String mbeansUri = "/%s/admin/mbeans?stats=true&wt=json";
+	private String host;
+	
+	
 	
 	CloseableHttpClient httpclient;
 	SolrHelper helper;
 
 	private static final Logger log = Logger.getLogger(SolrRemote.class.getName());
-
-
-	/**
-	 * Initializes the Plugin. This method is called in the following cases:
-	 * <ul>
-	 * <li>before <tt>execute</tt> is called the first time for this
-	 * scheduled Plugin</li>
-	 * <li>before the next <tt>execute</tt> if <tt>teardown</tt> was called
-	 * after the last execution</li>
-	 * </ul>
-	 * <p>
-	 * If the returned status is <tt>null</tt> or the status code is a
-	 * non-success code then {@link Plugin#teardown() teardown()} will be called
-	 * next.
-	 * <p>
-	 * Resources like sockets or files can be opened in this method.
-	 * @param env
-	 *            the configured <tt>MonitorEnvironment</tt> for this Plugin;
-	 *            contains subscribed measures, but <b>measurements will be
-	 *            discarded</b>
-	 * @see Plugin#teardown()
-	 * @return a <tt>Status</tt> object that describes the result of the
-	 *         method call
-	 */
-	@Override
 	public Status setup(MonitorEnvironment env) throws Exception {
 
 		return new Status(Status.StatusCode.Success);
 	}
 
-	/**
-	 * Executes the Monitor Plugin to retrieve subscribed measures and store
-	 * measurements.
-	 *
-	 * <p>
-	 * This method is called at the scheduled intervals. If the Plugin execution
-	 * takes longer than the schedule interval, subsequent calls to
-	 * {@link #execute(MonitorEnvironment)} will be skipped until this method
-	 * returns. After the execution duration exceeds the schedule timeout,
-	 * {@link TaskEnvironment#isStopped()} will return <tt>true</tt>. In this
-	 * case execution should be stopped as soon as possible. If the Plugin
-	 * ignores {@link TaskEnvironment#isStopped()} or fails to stop execution in
-	 * a reasonable timeframe, the execution thread will be stopped ungracefully
-	 * which might lead to resource leaks!
-	 *
-	 * @param env
-	 *            a <tt>MonitorEnvironment</tt> object that contains the
-	 *            Plugin configuration and subscribed measures. These
-	*            <tt>MonitorMeasure</tt>s can be used to store measurements.
-	 * @return a <tt>Status</tt> object that describes the result of the
-	 *         method call
-	 */
-	@Override
 	public Status execute(MonitorEnvironment env) throws Exception {
-		/* 
-		// this sample which shows how to book to (dynamic) monitor measures
 
-		Collection<MonitorMeasure> monitorMeasures = env.getMonitorMeasures("mymetricgroup", "mymetric");
-		for (MonitorMeasure subscribedMonitorMeasure : monitorMeasures) {
-
-			//this will book to the monitor measure
-			subscribedMonitorMeasure.setValue(42);
-
-			//for this subscribed measure we want to create a dynamic measure
-			MonitorMeasure dynamicMeasure = env.createDynamicMeasure(subscribedMonitorMeasure, "Queue Name", "Queue 1");
-			dynamicMeasure.setValue(24);
-
-			//now we create another one for a different queue name
-			dynamicMeasure = env.createDynamicMeasure(subscribedMonitorMeasure, "Queue Name", "Queue 2");
-			dynamicMeasure.setValue(32);
-
-
-		}
-		*/
-		String host = env.getHost().getAddress();
+		host = env.getHost().getAddress();
 		int port = Integer.parseInt(env.getConfigString("port"));
 		List<String> queryHandlers = Arrays.asList(env.getConfigString("handlers").split(";"));
 
-		List<String> cores = Arrays.asList(env.getConfigString("cores").split(";"));
-		List<Core> listaCores = new ArrayList<Core>();
-		
 		context_root = "http://" + host + ":" + port + "/solr";		
-
-		for (String nomeCore : cores) {
-			Core core = new Core();
-			core.setName(nomeCore);
-			core.setQueryHandlers(queryHandlers);
-			listaCores.add(core);
-		}
-		
 		httpclient = HttpClients.createDefault();
 		
 		
-		//http://10.128.132.138:8080/solr/Produto/admin/mbeans?stats=true
 		Server server = new Server();
 		server.setHost(host);
 		server.setPort(port);
 
+		log.warning("Conectando ao solar: " + host + " na porta: " + port);
+		helper = new SolrHelper(httpclient);
+		
+		List<String> listCoresNomes = helper.getCores("http://" + host +":" + port + "/solr/admin/cores?action=STATUS&wt=json");
+		List<Core> listaCores = new ArrayList<Core>();
+		
+		for (String core : listCoresNomes) {
+			log.warning("Core: " + core + " foi encontrado");
+			Core c = new Core();
+			c.setName(core);
+			c.setQueryHandlers(queryHandlers);
+			listaCores.add(c);
+		}
+		
 		Configuration config = new Configuration();
 		config.setCores(listaCores);
 		config.setServer(server);
-		
-		helper = new SolrHelper(httpclient);
-
-		log.warning("Há " + cores.size() + " cores");
-		for (Core core : listaCores) {
-			log.warning("Core " + (listaCores.indexOf(core) + 1) + ": " +  core.getName());
-
-		}
-		
+	
 		try{
 			getSOLRMetrics(httpclient, helper, listaCores, env);
 		}catch(Exception e){
@@ -167,44 +104,6 @@ public class SolrRemote implements Monitor {
 		return new Status(Status.StatusCode.Success);
 	}
 
-	/**
-	 * Shuts the Plugin down and frees resources. This method is called in the
-	 * following cases:
-	 * <ul>
-	 * <li>the <tt>setup</tt> method failed</li>
-	 * <li>the Plugin configuration has changed</li>
-	 * <li>the execution duration of the Plugin exceeded the schedule timeout</li>
-	 * <li>the schedule associated with this Plugin was removed</li>
-	 * </ul>
-	 *
-	 * <p>
-	 * The Plugin methods <tt>setup</tt>, <tt>execute</tt> and
-	 * <tt>teardown</tt> are called on different threads, but they are called
-	 * sequentially. This means that the execution of these methods does not
-	 * overlap, they are executed one after the other.
-	 *
-	 * <p>
-	 * Examples:
-	 * <ul>
-	 * <li><tt>setup</tt> (failed) -&gt; <tt>teardown</tt></li>
-	 * <li><tt>execute</tt> starts, configuration changes, <tt>execute</tt>
-	 * ends -&gt; <tt>teardown</tt><br>
-	 * on next schedule interval: <tt>setup</tt> -&gt; <tt>execute</tt> ...</li>
-	 * <li><tt>execute</tt> starts, execution duration timeout,
-	 * <tt>execute</tt> stops -&gt; <tt>teardown</tt></li>
-	 * <li><tt>execute</tt> starts, <tt>execute</tt> ends, schedule is
-	 * removed -&gt; <tt>teardown</tt></li>
-	 * </ul>
-	 * Failed means that either an unhandled exception is thrown or the status
-	 * returned by the method contains a non-success code.
-	 *
-	 *
-	 * <p>
-	 * All by the Plugin allocated resources should be freed in this method.
-	 * Examples are opened sockets or files.
-	 *
-	 * @see Monitor#setup(MonitorEnvironment)
-	 */	@Override
 	public void teardown(MonitorEnvironment env) throws Exception {
 		 
 		 if (httpclient != null){
@@ -237,8 +136,6 @@ public class SolrRemote implements Monitor {
 				List<Core> coresConfig,
 				MonitorEnvironment env) throws IOException {
 			
-			
-
 			for (Core coreConfig : coresConfig) {
 				String core = coreConfig.getName();
 				
@@ -258,11 +155,23 @@ public class SolrRemote implements Monitor {
 						CoreStats coreStats = new CoreStats();
 						coreStats.populateStats(solrMBeansHandlersMap);
 						
+						log.warning("Capturando metricas de Core Stats para " + core);
 						Iterables.get(env.getMonitorMeasures("Core Stats", "Num Docs"), 0).setValue(coreStats.getNumDocs());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures(	"Core Stats", "Num Docs"), 0),
+										"Core", core).setValue(coreStats.getNumDocs());
+						
 						Iterables.get(env.getMonitorMeasures("Core Stats", "Max Docs"), 0).setValue(coreStats.getMaxDocs());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures(	"Core Stats", "Max Docs"), 0),
+										"Core", core).setValue(coreStats.getMaxDocs());
+						
 						Iterables.get(env.getMonitorMeasures("Core Stats", "Deleted Docs"), 0).setValue(coreStats.getDeletedDocs());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures(	"Core Stats", "Deleted Docs"), 0),
+										"Core", core).setValue(coreStats.getDeletedDocs());
 	
-						System.out.println(core + " " + coreStats.getNumDocs());
+						//System.out.println(core + " " + coreStats.getNumDocs());
 						//log.warning("CoreStats: " + core + " " + coreStats.getNumDocs());
 					} catch (Exception e) {
 						System.out.println("Error Retrieving Core Stats for " + core);
@@ -283,31 +192,37 @@ public class SolrRemote implements Monitor {
 						for (String handler : coreConfig.getQueryHandlers()) {
 							QueryStats queryStats = new QueryStats();
 							queryStats.populateStats(solrMBeansHandlersMap, handler);
-
+							Double valorAtual = 0.0;
 							
-							//TODO VALIDAR ESSA PORRA
-							somaRequests += queryStats.getRequests();
+							log.warning("Capturando metricas de Query Stats para " + core + ", handler: " + handler);
+							
+							
+							valorAtual = calculateDifference("requests", queryStats.getRequests(), host + "_" + core + "_" + handler);
+							somaRequests += valorAtual;
 							Iterables.get(env.getMonitorMeasures("Query Stats", "Requests"), 0).setValue(somaRequests);
 							env.createDynamicMeasure(Iterables.get(
 									env.getMonitorMeasures(
 											"Query Stats", "Requests"), 0),
-											"Handler", handler).setValue(
-											queryStats.getRequests());
+											"Handler", handler + " " + core).setValue(valorAtual);
 							
-							somaErrors  += queryStats.getErrors();
+							
+							
+							valorAtual = calculateDifference("errors", queryStats.getErrors(), host + "_" + core + "_" + handler);
+							somaErrors  += valorAtual;
 							Iterables.get(env.getMonitorMeasures("Query Stats", "Errors"), 0).setValue(somaErrors);
 							env.createDynamicMeasure(Iterables.get(
 									env.getMonitorMeasures(
 											"Query Stats", "Errors"), 0),
-											"Handler", handler).setValue(
-											queryStats.getErrors());
+											"Handler", handler + " " + core).setValue(valorAtual);
 							
-							somaTimeouts += queryStats.getTimeouts();
+							
+							valorAtual = calculateDifference("timeouts", queryStats.getTimeouts(), host + "_" + core + "_" + handler);
+							somaTimeouts += valorAtual;
 							Iterables.get(env.getMonitorMeasures("Query Stats", "Timeouts"), 0).setValue(somaTimeouts);
 							env.createDynamicMeasure(Iterables.get(
 									env.getMonitorMeasures(
 											"Query Stats", "Timeouts"), 0),
-											"Handler", handler).setValue(
+											"Handler", handler + " " + core).setValue(
 											queryStats.getTimeouts());
 							
 							somaAvgRequests += queryStats.getAvgRequests();
@@ -315,7 +230,7 @@ public class SolrRemote implements Monitor {
 							env.createDynamicMeasure(Iterables.get(
 									env.getMonitorMeasures(
 											"Query Stats", "Avg Requests"), 0),
-											"Handler", handler).setValue(
+											"Handler", handler + " " + core).setValue(
 											queryStats.getAvgRequests());
 							
 							countAvgTimePerRequest += 1.0;
@@ -324,7 +239,7 @@ public class SolrRemote implements Monitor {
 							env.createDynamicMeasure(Iterables.get(
 									env.getMonitorMeasures(
 											"Query Stats", "Avg Time Per Request"), 0),
-											"Handler", handler).setValue(
+											"Handler", handler + " " + core).setValue(
 											queryStats.getAvgTimePerRequest());
 							
 							somaFiveMinRateRequests += queryStats.getFiveMinRateRequests();
@@ -332,7 +247,7 @@ public class SolrRemote implements Monitor {
 							env.createDynamicMeasure(Iterables.get(
 									env.getMonitorMeasures(
 											"Query Stats", "Five Min Rate Requests"), 0),
-											"Handler", handler).setValue(
+											"Handler", handler + " " + core).setValue(
 											queryStats.getFiveMinRateRequests());
 							
 						}
@@ -347,20 +262,79 @@ public class SolrRemote implements Monitor {
 					try {
 						CacheStats cacheStats = new CacheStats();
 						cacheStats.populateStats(solrMBeansHandlersMap);
-						System.out.println("Cache: " + core + " " + cacheStats.getDocumentCacheHitRatio());
+						//System.out.println("Cache: " + core + " " + cacheStats.getDocumentCacheHitRatio());
+						log.warning("Capturando metricas de Cache Status para " + core);
 						
 						Iterables.get(env.getMonitorMeasures("Cache Stats", "Query Result Cache Hit Ratio"), 0).setValue(cacheStats.getQueryResultCacheHitRatio());
-						Iterables.get(env.getMonitorMeasures("Cache Stats", "Query Result Cache Hit Ratio Cumulative"), 0).setValue(cacheStats.getQueryResultCacheHitRatioCumulative());
-						Iterables.get(env.getMonitorMeasures("Cache Stats", "Query Result Cache Size"), 0).setValue(cacheStats.getQueryResultCacheSize());
-						Iterables.get(env.getMonitorMeasures("Cache Stats", "Document Cache Hit Ratio"), 0).setValue(cacheStats.getDocumentCacheHitRatio());
-						Iterables.get(env.getMonitorMeasures("Cache Stats", "Document Cache Hit Ratio Cumulative"), 0).setValue(cacheStats.getDocumentCacheHitRatioCumulative());
-						Iterables.get(env.getMonitorMeasures("Cache Stats", "Document Cache Size"), 0).setValue(cacheStats.getDocumentCacheSize());
-						Iterables.get(env.getMonitorMeasures("Cache Stats", "Field Value Cache Hit Ratio"), 0).setValue(cacheStats.getFieldValueCacheHitRatio());
-						Iterables.get(env.getMonitorMeasures("Cache Stats", "Field Value Cache Hit Ratio Cumulative"), 0).setValue(cacheStats.getFieldValueCacheHitRatioCumulative());
-						Iterables.get(env.getMonitorMeasures("Cache Stats", "Field Value Cache Size"), 0).setValue(cacheStats.getFieldValueCacheSize());
-						Iterables.get(env.getMonitorMeasures("Cache Stats", "Filter Cache Hit Ratio"), 0).setValue(cacheStats.getFilterCacheHitRatio());
-						Iterables.get(env.getMonitorMeasures("Cache Stats", "Filter Cache Hit Ratio Cumulative"), 0).setValue(cacheStats.getFilterCacheHitRatioCumulative());
-						Iterables.get(env.getMonitorMeasures("Cache Stats", "Filter Cache Size"), 0).setValue(cacheStats.getFilterCacheSize());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures("Cache Stats", "Query Result Cache Hit Ratio"), 0),
+										"Core", core).setValue(cacheStats.getQueryResultCacheHitRatio());
+						
+						Iterables.get(env.getMonitorMeasures("Cache Stats", "Query Result Cache Hit Ratio Cumulative"),
+								0).setValue(cacheStats.getQueryResultCacheHitRatioCumulative());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures("Cache Stats", "Query Result Cache Hit Ratio Cumulative"), 0),
+										"Core", core).setValue(cacheStats.getQueryResultCacheHitRatioCumulative());
+						
+						Iterables.get(env.getMonitorMeasures("Cache Stats", "Query Result Cache Size"),
+								0).setValue(cacheStats.getQueryResultCacheSize());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures("Cache Stats", "Query Result Cache Size"), 0),
+										"Core", core).setValue(cacheStats.getQueryResultCacheSize());
+						
+						Iterables.get(env.getMonitorMeasures("Cache Stats", "Document Cache Hit Ratio"),
+								0).setValue(cacheStats.getDocumentCacheHitRatio());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures("Cache Stats", "Document Cache Hit Ratio"), 0),
+										"Core", core).setValue(cacheStats.getDocumentCacheHitRatio());
+						
+						Iterables.get(env.getMonitorMeasures("Cache Stats", "Document Cache Hit Ratio Cumulative"),
+								0).setValue(cacheStats.getDocumentCacheHitRatioCumulative());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures("Cache Stats", "Document Cache Hit Ratio Cumulative"), 0),
+										"Core", core).setValue(cacheStats.getDocumentCacheHitRatioCumulative());
+						
+						Iterables.get(env.getMonitorMeasures("Cache Stats", "Document Cache Size"),
+								0).setValue(cacheStats.getDocumentCacheSize());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures("Cache Stats", "Document Cache Size"), 0),
+										"Core", core).setValue(cacheStats.getDocumentCacheSize());
+						
+						Iterables.get(env.getMonitorMeasures("Cache Stats", "Field Value Cache Hit Ratio"),
+								0).setValue(cacheStats.getFieldValueCacheHitRatio());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures("Cache Stats", "Field Value Cache Hit Ratio"), 0),
+										"Core", core).setValue(cacheStats.getFieldValueCacheHitRatio());
+						
+						Iterables.get(env.getMonitorMeasures("Cache Stats", "Field Value Cache Hit Ratio Cumulative"),
+								0).setValue(cacheStats.getFieldValueCacheHitRatioCumulative());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures("Cache Stats", "Field Value Cache Hit Ratio Cumulative"), 0),
+										"Core", core).setValue(cacheStats.getFieldValueCacheHitRatioCumulative());
+						
+						Iterables.get(env.getMonitorMeasures("Cache Stats", "Field Value Cache Size"),
+								0).setValue(cacheStats.getFieldValueCacheSize());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures("Cache Stats", "Field Value Cache Size"), 0),
+										"Core", core).setValue(cacheStats.getFieldValueCacheSize());
+						
+						Iterables.get(env.getMonitorMeasures("Cache Stats", "Filter Cache Hit Ratio"),
+								0).setValue(cacheStats.getFilterCacheHitRatio());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures("Cache Stats", "Filter Cache Hit Ratio"), 0),
+										"Core", core).setValue(cacheStats.getFilterCacheHitRatio());
+						
+						Iterables.get(env.getMonitorMeasures("Cache Stats", "Filter Cache Hit Ratio Cumulative"),
+								0).setValue(cacheStats.getFilterCacheHitRatioCumulative());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures("Cache Stats", "Filter Cache Hit Ratio Cumulative"), 0),
+										"Core", core).setValue(cacheStats.getFilterCacheHitRatioCumulative());
+						
+						Iterables.get(env.getMonitorMeasures("Cache Stats", "Filter Cache Size"),
+								0).setValue(cacheStats.getFilterCacheSize());
+						env.createDynamicMeasure(Iterables.get(
+								env.getMonitorMeasures("Cache Stats", "Filter Cache Size"), 0),
+										"Core", core).setValue(cacheStats.getFilterCacheSize());
 						
 						//log.warning("Cache: " + core + " " + cacheStats.getDocumentCacheHitRatio());
 					} catch (Exception e) {
@@ -373,15 +347,13 @@ public class SolrRemote implements Monitor {
 				try {
 					MemoryStats memoryStats = new MemoryStats();
 					String uri = context_root + String.format(memory_uri, core);
-					//log.warning(uri);
+					log.warning("Capturando metricas de Memory para " + core);
 					
 					HttpGet request = new HttpGet(uri);
 					HttpResponse response = httpClient.execute(request);
 					InputStream inputStream = response.getEntity().getContent();
 					
 					memoryStats.populateStats(inputStream);
-					
-					//log.warning("WARNING PORRA: " + memoryStats.getJvmMemoryUsed());
 
 					Iterables.get(env.getMonitorMeasures("Memory Stats", "JVM Memory Used"), 0).setValue(memoryStats.getJvmMemoryUsed());
 					Iterables.get(env.getMonitorMeasures("Memory Stats", "JVM Memory Free"), 0).setValue(memoryStats.getJvmMemoryFree());
@@ -394,6 +366,16 @@ public class SolrRemote implements Monitor {
 					Iterables.get(env.getMonitorMeasures("Memory Stats", "Open File Descriptor Count"), 0).setValue(memoryStats.getOpenFileDescriptorCount());
 					Iterables.get(env.getMonitorMeasures("Memory Stats", "Max File Descriptor Count"), 0).setValue(memoryStats.getMaxFileDescriptorCount());
 					
+					env.createDynamicMeasure(Iterables.get(env.getMonitorMeasures("Memory Stats", "JVM Memory Used"), 0), "Core", core).setValue(memoryStats.getJvmMemoryUsed());
+					env.createDynamicMeasure(Iterables.get(env.getMonitorMeasures("Memory Stats", "JVM Memory Free"), 0), "Core", core).setValue(memoryStats.getJvmMemoryFree());
+					env.createDynamicMeasure(Iterables.get(env.getMonitorMeasures("Memory Stats", "JVM Memory Total"), 0), "Core", core).setValue(memoryStats.getJvmMemoryTotal());
+					env.createDynamicMeasure(Iterables.get(env.getMonitorMeasures("Memory Stats", "Free Physical Memory Size"), 0), "Core", core).setValue(memoryStats.getFreePhysicalMemorySize());
+					env.createDynamicMeasure(Iterables.get(env.getMonitorMeasures("Memory Stats", "Total Physical Memory Size"), 0), "Core", core).setValue(memoryStats.getTotalPhysicalMemorySize());
+					env.createDynamicMeasure(Iterables.get(env.getMonitorMeasures("Memory Stats", "Committed Virtual Memory Size"), 0), "Core", core).setValue(memoryStats.getCommittedVirtualMemorySize());
+					env.createDynamicMeasure(Iterables.get(env.getMonitorMeasures("Memory Stats", "Free Swap Space Size"), 0), "Core", core).setValue(memoryStats.getFreeSwapSpaceSize());
+					env.createDynamicMeasure(Iterables.get(env.getMonitorMeasures("Memory Stats", "Total Swap Space Size"), 0), "Core", core).setValue(memoryStats.getTotalSwapSpaceSize());
+					env.createDynamicMeasure(Iterables.get(env.getMonitorMeasures("Memory Stats", "Open File Descriptor Count"), 0), "Core", core).setValue(memoryStats.getOpenFileDescriptorCount());
+					env.createDynamicMeasure(Iterables.get(env.getMonitorMeasures("Memory Stats", "Max File Descriptor Count"), 0), "Core", core).setValue(memoryStats.getMaxFileDescriptorCount());
 					
 				} catch (Exception e) {
 					System.out.println("Error retrieving memory stats for " + core);
@@ -407,4 +389,75 @@ public class SolrRemote implements Monitor {
 				}
 			}
 		}
+	    public double calculateDifference(String metric, double current, String identifier) throws Exception{
+	    	
+	    	//Dealing with CUMULATIVE METRICS
+	    	File yourFile = new File((metric +"_"+ identifier + ".txt").replace("/", ""));
+	    	log.severe("ARQUIVO: " + yourFile);
+	    	double actual = 0;
+	    	double previous = 0;
+	    	long unsignedPrevious;
+	    	boolean isUnsigned = false;
+	    	DecimalFormat format = new DecimalFormat();
+	    	format.setDecimalSeparatorAlwaysShown(false);
+	    	
+			try{
+				if(!yourFile.exists()) {
+					log.severe("eita porra nao existe o arquivo");
+				    yourFile.createNewFile();
+				}else{
+					log.severe("Ué existe essa porra");
+				}
+				BufferedReader leitura = new BufferedReader(new FileReader(yourFile));
+				String valorArquivo = leitura.readLine();
+
+				if(valorArquivo != null){
+					if (valorArquivo.charAt(0) == '-'){
+						isUnsigned = true;
+					}
+					try {
+						if (isUnsigned){
+							unsignedPrevious = Integer.parseInt(valorArquivo) & 0x00000000ffffffffL;
+							previous = unsignedPrevious;
+						}
+						else{
+							previous = Double.valueOf(valorArquivo);
+						}
+						
+					} catch (Exception e) {
+						previous = current;
+						log.severe("ERRO no calculo de diferenca! " + metric + " " + identifier);
+						
+						log.log(Level.SEVERE, e.getMessage(), e);
+						e.printStackTrace();
+						leitura.close();
+						throw e;
+					}
+
+				}else
+					previous = current;
+				if (current >= previous){
+					actual = current - previous;
+				}else{
+					actual = 0;
+				}
+
+				leitura.close();
+				
+				FileOutputStream oFile = new FileOutputStream(yourFile, false); 
+				BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(oFile));
+				
+				String valorASerEscrito = format.format(current).replace(",", "");
+				bw.write(valorASerEscrito);
+				bw.close();
+				
+			}catch (Exception e){
+				e.printStackTrace();
+				log.severe("\nPREVIOUS: " + previous +" \nCURRENT: " +current+ "\nACTUAL: " + actual );
+				log.log(Level.SEVERE, e.getMessage(), e);
+				throw e;
+				
+			}
+			return actual;
+	    }
 }
